@@ -1,8 +1,17 @@
 {
     "name": "livewave/laravel-sdk",
     "description": "Official Laravel SDK for LiveWave real-time events and notifications platform",
-    "keywords": ["laravel", "livewave", "realtime", "websocket", "broadcasting", "notifications", "pusher", "reverb"],
-    "homepage": "https://github.com/YOUR_USERNAME/live-wave-laravel",
+    "keywords": [
+        "laravel",
+        "livewave",
+        "realtime",
+        "websocket",
+        "broadcasting",
+        "notifications",
+        "pusher",
+        "reverb"
+    ],
+    "homepage": "https://github.com/touhi13/live-wave-laravel",
     "license": "MIT",
     "type": "library",
     "authors": [
@@ -12,8 +21,8 @@
         }
     ],
     "support": {
-        "issues": "https://github.com/YOUR_USERNAME/live-wave-laravel/issues",
-        "source": "https://github.com/YOUR_USERNAME/live-wave-laravel"
+        "issues": "https://github.com/touhi13/live-wave-laravel/issues",
+        "source": "https://github.com/touhi13/live-wave-laravel"
     },
     "require": {
         "php": "^8.1",
