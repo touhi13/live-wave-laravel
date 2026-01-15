@@ -4,6 +4,7 @@ namespace LiveWave\Broadcasting;
 
 use Illuminate\Broadcasting\Broadcasters\Broadcaster;
 use Illuminate\Broadcasting\BroadcastException;
+use Illuminate\Http\Request;
 use LiveWave\LiveWaveClient;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -18,22 +19,19 @@ class LiveWaveBroadcaster extends Broadcaster
      */
     public function auth($request)
     {
-        $channelName = $request->channel_name;
+        $channelName = $this->normalizeChannelName($request->channel_name);
 
-        // Remove prefixes to get the actual channel name
-        $channelName = str_replace(['private-', 'presence-'], '', $channelName);
+        if (
+            str_starts_with($request->channel_name, 'private-') &&
+            !$this->retrieveUser($request, $channelName)
+        ) {
+            throw new AccessDeniedHttpException('Unauthorized.');
+        }
 
-        // Find the channel callback
-        $channel = $this->verifyUserCanAccessChannel(
+        return parent::verifyUserCanAccessChannel(
             $request,
             $channelName
         );
-
-        if (!$channel) {
-            throw new AccessDeniedHttpException();
-        }
-
-        return parent::validAuthenticationResponse($request, $channel);
     }
 
     /**
@@ -41,39 +39,41 @@ class LiveWaveBroadcaster extends Broadcaster
      */
     public function validAuthenticationResponse($request, $result)
     {
-        if (is_bool($result)) {
-            return json_encode($result);
-        }
-
         $channelName = $request->channel_name;
-        $socketId = $request->socket_id;
+        $socketId    = $request->socket_id;
 
         // For presence channels, include user info
         if (str_starts_with($channelName, 'presence-')) {
-            $user = $request->user();
-            
-            return [
-                'auth' => $this->generateAuthSignature($socketId, $channelName),
-                'channel_data' => json_encode([
-                    'user_id' => $user->getAuthIdentifier(),
-                    'user_info' => $result,
-                ]),
-            ];
+            $user = $this->retrieveUser($request, $channelName);
+
+            $userId   = $user->getAuthIdentifier();
+            $userInfo = is_array($result) ? $result : [];
+
+            return $this->client->authorizePresenceChannel(
+                $socketId,
+                $channelName,
+                (string) $userId,
+                $userInfo
+            );
         }
 
-        return [
-            'auth' => $this->generateAuthSignature($socketId, $channelName),
-        ];
+        return $this->client->authorizeChannel($socketId, $channelName);
     }
 
     /**
-     * Generate the auth signature
+     * Normalize the channel name (remove private-/presence- prefix)
      */
-    protected function generateAuthSignature(string $socketId, string $channelName): string
+    protected function normalizeChannelName(string $channelName): string
     {
-        $stringToSign = "{$socketId}:{$channelName}";
-        
-        return $this->client->generateSignature($stringToSign);
+        if (str_starts_with($channelName, 'private-')) {
+            return substr($channelName, 8);
+        }
+
+        if (str_starts_with($channelName, 'presence-')) {
+            return substr($channelName, 9);
+        }
+
+        return $channelName;
     }
 
     /**
@@ -81,16 +81,14 @@ class LiveWaveBroadcaster extends Broadcaster
      */
     public function broadcast(array $channels, $event, array $payload = [])
     {
+        $socket = $payload['socket'] ?? null;
+
         $channelNames = collect($channels)->map(function ($channel) {
             return (string) $channel;
         })->toArray();
 
         try {
-            if (count($channelNames) === 1) {
-                $this->client->broadcast($channelNames[0], $event, $payload);
-            } else {
-                $this->client->broadcastToMany($channelNames, $event, $payload);
-            }
+            $this->client->trigger($channelNames, $event, $payload, $socket);
         } catch (\Exception $e) {
             throw new BroadcastException(
                 sprintf('LiveWave broadcast failed: %s', $e->getMessage())

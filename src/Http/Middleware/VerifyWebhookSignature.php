@@ -4,11 +4,16 @@ namespace LiveWave\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use LiveWave\Facades\LiveWave;
+use LiveWave\LiveWaveClient;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class VerifyWebhookSignature
 {
+    public function __construct(
+        protected LiveWaveClient $client
+    ) {}
+
     /**
      * Handle an incoming request.
      */
@@ -17,24 +22,26 @@ class VerifyWebhookSignature
         $signature = $request->header('X-LiveWave-Signature');
 
         if (!$signature) {
-            abort(401, 'Missing webhook signature');
+            throw new AccessDeniedHttpException('Missing webhook signature.');
         }
 
         $payload = $request->getContent();
+        $timestamp = $request->header('X-LiveWave-Timestamp');
 
-        if (!LiveWave::verifySignature($payload, $signature)) {
-            abort(401, 'Invalid webhook signature');
+        // Verify timestamp to prevent replay attacks
+        if ($timestamp) {
+            $tolerance = config('livewave.webhooks.tolerance', 300);
+
+            if (abs(time() - (int) $timestamp) > $tolerance) {
+                throw new AccessDeniedHttpException('Webhook timestamp expired.');
+            }
+
+            // Include timestamp in signature verification
+            $payload = $timestamp . '.' . $payload;
         }
 
-        // Check timestamp to prevent replay attacks
-        $timestamp = $request->header('X-LiveWave-Timestamp');
-        if ($timestamp) {
-            $requestTime = strtotime($timestamp);
-            $tolerance = 300; // 5 minutes
-
-            if (abs(time() - $requestTime) > $tolerance) {
-                abort(401, 'Webhook timestamp expired');
-            }
+        if (!$this->client->verifyWebhookSignature($payload, $signature)) {
+            throw new AccessDeniedHttpException('Invalid webhook signature.');
         }
 
         return $next($request);

@@ -1,222 +1,380 @@
 # LiveWave Laravel SDK
 
-Official Laravel SDK for LiveWave real-time events and notifications platform.
+**Optional** Laravel SDK for [LiveWave](https://github.com/touhi13/live-wave) - A self-hosted real-time WebSocket server for Laravel applications.
 
-## Installation
+> **Note:** For basic broadcasting, you **don't need this SDK**! Just use standard Laravel Pusher configuration pointing to your LiveWave server. This SDK is only needed for advanced features like API management, webhooks, and notifications.
+
+## Architecture
+
+LiveWave works like [Laravel Reverb's multi-app feature](https://laravel.com/docs/12.x/reverb#additional-applications) - your LiveWave server acts as a **central WebSocket server** that multiple Laravel applications can connect to:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              LiveWave Server (Reverb)                   │
+│         Central WebSocket Server for All Apps           │
+├─────────────────────────────────────────────────────────┤
+│  Team 1 (E-commerce)  │  Team 2 (CRM)  │  Team 3       │
+│  app_id: xxx          │  app_id: yyy    │  app_id: zzz   │
+│  app_key              │  app_key        │  app_key       │
+│  app_secret           │  app_secret     │  app_secret    │
+└─────────────────────────────────────────────────────────┘
+         ▲                    ▲                    ▲
+         │                    │                    │
+    ┌────┴───┐          ┌────┴───┐          ┌────┴───┐
+    │ App 1  │          │ App 2  │          │ App 3  │
+    │ Laravel│          │ Laravel│          │ Laravel│
+    │(Pusher)│          │(Pusher)│          │(Pusher)│
+    └────────┘          └────────┘          └────────┘
+```
+
+Each Laravel application connects to the **same LiveWave server** but with its own credentials (from their Team dashboard), keeping channels isolated.
+
+## Basic Usage (No SDK Required)
+
+### Step 1: Get Credentials from LiveWave Dashboard
+
+When you create a Team in LiveWave, you get:
+
+- `app_id`
+- `app_key`
+- `app_secret`
+
+### Step 2: Configure Your Laravel App
+
+**`.env` file:**
+
+```env
+BROADCAST_CONNECTION=pusher
+
+PUSHER_APP_ID=your-app-id-from-livewave
+PUSHER_APP_KEY=your-app-key-from-livewave
+PUSHER_APP_SECRET=your-app-secret-from-livewave
+PUSHER_HOST=your-livewave-server.com
+PUSHER_PORT=8080
+PUSHER_SCHEME=http
+```
+
+**`config/broadcasting.php`:**
+
+```php
+'pusher' => [
+    'driver' => 'pusher',
+    'key' => env('PUSHER_APP_KEY'),
+    'secret' => env('PUSHER_APP_SECRET'),
+    'app_id' => env('PUSHER_APP_ID'),
+    'options' => [
+        'host' => env('PUSHER_HOST'),
+        'port' => env('PUSHER_PORT', 8080),
+        'scheme' => env('PUSHER_SCHEME', 'http'),
+        'useTLS' => false,
+    ],
+],
+```
+
+### Step 3: Frontend (Laravel Echo)
+
+```bash
+npm install laravel-echo pusher-js
+```
+
+```javascript
+import Echo from "laravel-echo";
+import Pusher from "pusher-js";
+
+window.Pusher = Pusher;
+
+window.Echo = new Echo({
+  broadcaster: "pusher",
+  key: import.meta.env.VITE_PUSHER_APP_KEY,
+  wsHost: import.meta.env.VITE_PUSHER_HOST,
+  wsPort: import.meta.env.VITE_PUSHER_PORT,
+  forceTLS: false,
+  disableStats: true,
+  enabledTransports: ["ws", "wss"],
+});
+```
+
+**`.env`:**
+
+```env
+VITE_PUSHER_APP_KEY="${PUSHER_APP_KEY}"
+VITE_PUSHER_HOST="${PUSHER_HOST}"
+VITE_PUSHER_PORT="${PUSHER_PORT}"
+```
+
+### Step 4: Broadcast Events
+
+```php
+// app/Events/MessageSent.php
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+
+class MessageSent implements ShouldBroadcast
+{
+    use InteractsWithSockets;
+
+    public function __construct(public string $message) {}
+
+    public function broadcastOn(): Channel
+    {
+        return new Channel('chat');
+    }
+}
+
+// Dispatch
+event(new MessageSent('Hello World!'));
+```
+
+**That's it!** No SDK needed for basic broadcasting. ✅
+
+---
+
+## When to Use This SDK
+
+This SDK is **optional** and only needed for:
+
+1. **API Management** - Create/manage channels, API keys via code
+2. **Webhooks** - Receive events from LiveWave (channel created, member joined, etc.)
+3. **Notifications** - Send rich notifications via API
+4. **Convenience** - Helper methods and facade for common operations
+
+## Installation (For Advanced Features)
 
 ```bash
 composer require livewave/laravel-sdk
 ```
 
-Or add manually to your `composer.json`:
-
-```json
-{
-    "require": {
-        "livewave/laravel-sdk": "^1.0"
-    }
-}
-```
-
-## Configuration
-
-Publish the configuration file:
+Then run the installation command:
 
 ```bash
-php artisan vendor:publish --tag=livewave-config
+php artisan livewave:install
 ```
 
-Add your credentials to `.env`:
+This will:
+
+- Publish the configuration file
+- Update your `.env` with LiveWave credentials
+- Configure the broadcasting driver
+
+## SDK Configuration
+
+### Environment Variables
+
+Add these to your `.env` file:
 
 ```env
-LIVEWAVE_API_KEY=your_api_key_here
-LIVEWAVE_API_SECRET=your_api_secret_here
-LIVEWAVE_BASE_URL=https://your-livewave-instance.com
+LIVEWAVE_APP_ID=your-app-id
+LIVEWAVE_APP_KEY=your-app-key
+LIVEWAVE_APP_SECRET=your-app-secret
+LIVEWAVE_HOST=your-livewave-server.com
+LIVEWAVE_PORT=8080
 ```
 
-## Quick Start
+For production with SSL:
 
-### Broadcasting Events
+```env
+LIVEWAVE_HOST=livewave.yourapp.com
+LIVEWAVE_PORT=443
+LIVEWAVE_USE_TLS=true
+LIVEWAVE_SCHEME=https
+LIVEWAVE_WS_SCHEME=wss
+```
+
+### Broadcasting Configuration
+
+Add the `livewave` connection to `config/broadcasting.php`:
+
+```php
+'connections' => [
+    'livewave' => [
+        'driver' => 'livewave',
+    ],
+    // ... other connections
+],
+```
+
+## SDK Usage Examples
+
+### Direct Broadcasting (Using Facade)
 
 ```php
 use LiveWave\Facades\LiveWave;
 
 // Broadcast to a public channel
-LiveWave::broadcast('my-channel', 'my-event', [
-    'message' => 'Hello, World!',
-    'user_id' => 123,
+LiveWave::broadcast('news', 'article.published', [
+    'title' => 'Breaking News',
+    'content' => 'Something happened...',
 ]);
 
 // Broadcast to a private channel
 LiveWave::broadcastToPrivate('user.123', 'notification', [
-    'title' => 'New Message',
-    'body' => 'You have a new message',
+    'message' => 'You have a new message',
 ]);
 
-// Broadcast to a presence channel
-LiveWave::broadcastToPresence('chat-room.1', 'user-typing', [
-    'user' => 'John Doe',
-]);
+// Broadcast to multiple channels
+LiveWave::broadcastToMany(['channel1', 'channel2'], 'event.name', $data);
 ```
 
-### Using the Facade
+### Channel Information
 
 ```php
-use LiveWave\Facades\LiveWave;
+// Get channel info
+$info = LiveWave::getChannelInfo('presence-room.1', ['user_count', 'subscription_count']);
 
 // Get all channels
-$channels = LiveWave::channels()->all();
+$channels = LiveWave::getChannels('presence-', ['user_count']);
 
-// Create a channel
-$channel = LiveWave::channels()->create([
-    'name' => 'notifications',
-    'type' => 'private',
-]);
-
-// Delete a channel
-LiveWave::channels()->delete('channel-id');
-
-// Get channel statistics
-$stats = LiveWave::channels()->stats('channel-id');
+// Get presence channel users
+$users = LiveWave::getPresenceUsers('presence-room.1');
 ```
 
-### Sending Notifications
+### Webhooks
+
+Create a route for webhooks:
 
 ```php
-use LiveWave\Facades\LiveWave;
-
-// Send to a single user
-LiveWave::notify()
-    ->user(123)
-    ->title('Welcome!')
-    ->body('Thanks for signing up')
-    ->data(['action' => 'welcome'])
-    ->send();
-
-// Send to multiple users
-LiveWave::notify()
-    ->users([1, 2, 3])
-    ->title('Announcement')
-    ->body('New feature available!')
-    ->send();
-
-// Send to a channel
-LiveWave::notify()
-    ->channel('announcements')
-    ->title('System Update')
-    ->body('Scheduled maintenance tonight')
-    ->send();
-```
-
-### Event Broadcasting with Laravel Events
-
-```php
-use LiveWave\Broadcasting\LiveWaveChannel;
-
-class OrderShipped implements ShouldBroadcast
-{
-    use Dispatchable, InteractsWithSockets, SerializesModels;
-
-    public function __construct(public Order $order) {}
-
-    public function broadcastOn(): array
-    {
-        return [
-            new LiveWaveChannel('orders.'.$this->order->user_id),
-        ];
-    }
-
-    public function broadcastAs(): string
-    {
-        return 'order.shipped';
-    }
-}
-```
-
-## API Reference
-
-### LiveWave Facade Methods
-
-| Method | Description |
-|--------|-------------|
-| `broadcast($channel, $event, $data)` | Broadcast to a public channel |
-| `broadcastToPrivate($channel, $event, $data)` | Broadcast to a private channel |
-| `broadcastToPresence($channel, $event, $data)` | Broadcast to a presence channel |
-| `channels()` | Access the Channels API |
-| `notify()` | Create a notification builder |
-| `webhooks()` | Access the Webhooks API |
-
-### Channels API
-
-```php
-$channels = LiveWave::channels();
-
-$channels->all();                    // List all channels
-$channels->find($id);                // Get a specific channel
-$channels->create($data);            // Create a channel
-$channels->update($id, $data);       // Update a channel
-$channels->delete($id);              // Delete a channel
-$channels->stats($id);               // Get channel statistics
-```
-
-### Webhooks API
-
-```php
-$webhooks = LiveWave::webhooks();
-
-$webhooks->all();                    // List all webhooks
-$webhooks->find($id);                // Get a specific webhook
-$webhooks->create($data);            // Create a webhook
-$webhooks->update($id, $data);       // Update a webhook
-$webhooks->delete($id);              // Delete a webhook
-$webhooks->deliveries($id);          // Get delivery history
-```
-
-## Middleware
-
-### Webhook Signature Verification
-
-```php
-// In your routes
 Route::post('/webhooks/livewave', [WebhookController::class, 'handle'])
     ->middleware('livewave.webhook');
+```
 
-// In your controller
-public function handle(Request $request)
+The `livewave.webhook` middleware automatically verifies the webhook signature.
+
+```php
+class WebhookController extends Controller
 {
-    $payload = $request->all();
-    $event = $request->header('X-LiveWave-Event');
-    
-    match($event) {
-        'event.broadcasted' => $this->handleEventBroadcasted($payload),
-        'channel.created' => $this->handleChannelCreated($payload),
-        default => null,
-    };
-    
-    return response()->json(['status' => 'ok']);
+    public function handle(Request $request)
+    {
+        $event = $request->input('event');
+        $data = $request->input('data');
+
+        match($event) {
+            'channel.created' => $this->handleChannelCreated($data),
+            'channel.deleted' => $this->handleChannelDeleted($data),
+            'member.added' => $this->handleMemberAdded($data),
+            'member.removed' => $this->handleMemberRemoved($data),
+            default => null,
+        };
+
+        return response()->json(['status' => 'ok']);
+    }
 }
+```
+
+## Private & Presence Channels
+
+### Private Channels
+
+```php
+use Illuminate\Broadcasting\PrivateChannel;
+
+public function broadcastOn(): PrivateChannel
+{
+    return new PrivateChannel('user.' . $this->userId);
+}
+```
+
+Define authorization in `routes/channels.php`:
+
+```php
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+```
+
+### Presence Channels
+
+```php
+use Illuminate\Broadcasting\PresenceChannel;
+
+public function broadcastOn(): PresenceChannel
+{
+    return new PresenceChannel('room.' . $this->roomId);
+}
+```
+
+Authorization with user info:
+
+```php
+Broadcast::channel('room.{roomId}', function ($user, $roomId) {
+    if ($user->canJoinRoom($roomId)) {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'avatar' => $user->avatar_url,
+        ];
+    }
+});
+```
+
+### Frontend Listening
+
+```javascript
+// Public channel
+Echo.channel("chat").listen(".message.sent", (e) => {
+  console.log("New message:", e.message);
+});
+
+// Private channel
+Echo.private("user." + userId).listen(".notification", (e) => {
+  console.log("Notification:", e);
+});
+
+// Presence channel
+Echo.join("room." + roomId)
+  .here((users) => {
+    console.log("Users in room:", users);
+  })
+  .joining((user) => {
+    console.log("User joined:", user);
+  })
+  .leaving((user) => {
+    console.log("User left:", user);
+  })
+  .listen(".message", (e) => {
+    console.log("Message:", e);
+  });
 ```
 
 ## Testing
 
+Use the `LiveWaveFake` for testing:
+
 ```php
+use LiveWave\Testing\LiveWaveFake;
 use LiveWave\Facades\LiveWave;
 
-// Fake all LiveWave calls
-LiveWave::fake();
+public function test_message_is_broadcast()
+{
+    LiveWave::fake();
 
-// Assert an event was broadcast
-LiveWave::assertBroadcast('my-channel', 'my-event');
+    // Perform action that broadcasts
+    $this->post('/messages', ['content' => 'Hello']);
 
-// Assert with specific data
-LiveWave::assertBroadcast('my-channel', 'my-event', function ($data) {
-    return $data['message'] === 'Hello';
-});
-
-// Assert nothing was broadcast
-LiveWave::assertNothingBroadcast();
+    // Assert broadcast was called
+    LiveWave::assertBroadcast('chat', 'message.sent', function ($data) {
+        return $data['content'] === 'Hello';
+    });
+}
 ```
+
+## Configuration Options
+
+| Option               | Description                  | Default     |
+| -------------------- | ---------------------------- | ----------- |
+| `app_id`             | Your LiveWave application ID | -           |
+| `app_key`            | Public key for Echo          | -           |
+| `app_secret`         | Secret for signing           | -           |
+| `server.host`        | LiveWave server host         | `127.0.0.1` |
+| `server.port`        | LiveWave server port         | `8080`      |
+| `server.scheme`      | HTTP scheme                  | `http`      |
+| `options.use_tls`    | Enable TLS                   | `false`     |
+| `options.verify_ssl` | Verify SSL certificates      | `true`      |
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for recent changes.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License. See [LICENSE](LICENSE) for details.

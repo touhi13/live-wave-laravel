@@ -1,22 +1,36 @@
 # Changelog
 
-All notable changes to `livewave/laravel-sdk` will be documented in this file.
+All notable changes to this package will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.1.0] - 2026-01-15
 
-## [Unreleased]
+### Added
+- Pusher-compatible API for seamless Laravel Echo integration
+- `php artisan livewave:install` command for easy setup
+- Support for multi-app architecture (like Laravel Reverb)
+- `trigger()` method for Pusher-compatible event triggering
+- `authorizeChannel()` and `authorizePresenceChannel()` methods
+- `getChannelInfo()`, `getChannels()`, and `getPresenceUsers()` methods
+- `getEchoConfig()` helper for frontend configuration
+- WebSocket configuration options (host, port, scheme, TLS)
+- Blade directive `@livewaveScripts` for injecting Echo config
 
-## [1.0.0] - 2024-01-14
+### Changed
+- Configuration structure updated for multi-app support
+- `LiveWaveClient` now uses Pusher-compatible authentication
+- `LiveWaveBroadcaster` updated for proper channel authorization
+- Webhook signature verification improved with timestamp support
+
+### Removed
+- Old `api_key` and `api_secret` config keys (replaced with `app_key` and `app_secret`)
+
+## [1.0.0] - 2026-01-13
 
 ### Added
 - Initial release
-- LiveWave Facade for easy access
-- Broadcasting to public, private, and presence channels
-- Notification builder with fluent API
-- Channels API for managing channels
-- Webhooks API for managing webhooks
-- Custom broadcast driver for Laravel
-- Webhook signature verification middleware
-- Testing utilities with `LiveWave::fake()`
-- Full Laravel 10, 11, and 12 support
+- `LiveWave` facade for easy access
+- Broadcasting driver for Laravel
+- Channel management API
+- Webhook handling with signature verification
+- Notification builder
+- `LiveWaveFake` for testing
